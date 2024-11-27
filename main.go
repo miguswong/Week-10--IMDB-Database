@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"fmt"
+	"log"
 	"os"
 
 	_ "modernc.org/sqlite"
@@ -11,12 +12,113 @@ import (
 
 func main() {
 
-	//create the database
+	//Create the database. Will skip creation process if movies.db already exists.
 	if err := createDB(); err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
 
+	// KEEP COMMENTED OUT. ONLY RUN IF NECESSARY
+	// updateNullVals()
+
+	queryTest()
+
+}
+
+func updateNullVals() {
+	fmt.Println("Updating null values in the database")
+
+	db, err := sql.Open("sqlite", "movies.db")
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	defer db.Close()
+
+	// Update movies table to convert 'NULL' string to actual NULL value
+	_, err = db.Exec("UPDATE movies SET rank = CASE WHEN rank = 'NULL' THEN NULL ELSE rank END")
+	if err != nil {
+		fmt.Println("Error updating null values:", err)
+		os.Exit(1)
+	}
+}
+
+func queryTest() error {
+	fmt.Println("Querying the database")
+
+	db, err := sql.Open("sqlite", "movies.db")
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	defer db.Close()
+	// Query the database
+	rows, err := db.Query(`
+    WITH RankedMovies AS (
+        SELECT
+            m.name,
+            m.rank,
+            mg.genre,
+            m.year,
+            ROW_NUMBER() OVER (
+                PARTITION BY mg.genre 
+                ORDER BY m.rank DESC
+            ) as rank_position
+        FROM movies m
+        INNER JOIN movies_genres mg ON m.id = mg.movie_id
+        WHERE m.rank IS NOT NULL
+    )
+    SELECT
+        genre,
+        name,
+        year,
+        rank
+    FROM RankedMovies
+    WHERE rank_position <= 3
+    ORDER BY genre, rank DESC;
+	`)
+	if err != nil {
+		log.Printf("Error executing query: %v", err)
+		return err
+	}
+	defer rows.Close()
+
+	//create file to store results
+	file, err := os.Create("query_results.csv")
+	if err != nil {
+		log.Printf("Error creating file: %v", err)
+		return err
+	}
+	defer file.Close()
+
+	// Process the results
+	for rows.Next() {
+		var genre, name string
+		var year int
+		var rank float64
+
+		err := rows.Scan(&genre, &name, &year, &rank)
+		if err != nil {
+			log.Printf("Error scanning row: %v", err)
+			continue
+		}
+		//write results to file
+		_, err = file.WriteString(fmt.Sprintf("%s,\"%s\",%d,%.1f\n", genre, name, year, rank))
+		if err != nil {
+			log.Printf("Error printing row: %v", err)
+			continue
+		}
+	}
+
+	// Check for errors from iterating over rows
+	if err = rows.Err(); err != nil {
+		log.Printf("Error iterating over rows: %v", err)
+		return err
+	}
+
+	fmt.Println("Successfully exported query results.")
+
+	return nil
 }
 
 func loadFile(tableName string, fileName string, dbName string) {
@@ -31,9 +133,12 @@ func loadFile(tableName string, fileName string, dbName string) {
 	defer file.Close()
 
 	reader := csv.NewReader(file)
+	reader.LazyQuotes = true    // Allow quotes within fields
+	reader.FieldsPerRecord = -1 // Allow variable number of fields per record
+
 	records, err := reader.ReadAll()
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println("Reading Error: ", err)
 		os.Exit(1)
 	}
 
@@ -68,7 +173,6 @@ func loadFile(tableName string, fileName string, dbName string) {
 		return
 	}
 	defer statement.Close()
-
 	//loop through records and insert into db
 	// Skip header row
 	records = records[1:]
@@ -82,8 +186,8 @@ func loadFile(tableName string, fileName string, dbName string) {
 			fmt.Println("Error inserting record:", err, values)
 			return
 		}
-		if i%1000 == 0 {
-			fmt.Printf("Inserted %d records(%.2f%%)\n", i, float64(i)/float64(len(records))*100)
+		if i%10000 == 0 {
+			fmt.Printf(" %s - Inserted %d records(%.2f%%)\n", tableName, i, float64(i)/float64(len(records))*100)
 		}
 	}
 }
