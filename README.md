@@ -30,7 +30,7 @@ Evaluate the possibilities of using Go for a personal movie database and applica
 * Populate the SQLite database with data you have downloaded. It is sufficient to define a database with two tables, such as the movies and genres tables populated with data from the comma-delimited filed IMDB-movies.csv and IMDB-movies_genres.csv.
 Show that you can perform SQL queries on the SQLite database you have created. For example, execute a JOIN query between two tables to answer a question such as "What types of movies (by genre) receive the highest ratings/ranks?" 
 * In the **README.md** file of the repository, describe your efforts in setting up the SQLite relational database. Describe how you might add to this database by including a table showing the movies that you have in your personal collection, where those movies are located, and perhaps your personal ratings of the movies. Describe plans for drawing on the personal movie database. What purpose would it serve? Describe possible user interactions with the database (beyond what can be obtained from SQL queries alone).  In other words, what would a useful Go movie application look like? What would be the advantages of this application over IMDb alone?
-Finally, in the **README.md** file, describe possible database enhancements and further application development. 
+Finally, in thse **README.md** file, describe possible database enhancements and further application development. 
 (Optional) Add additional comments to the **README.md** file, considering possibilities for adding movie review information to the database. What might be the possibilities for building a personal movie recommendation system based on your personal movie reviews?
 
 ## Program description
@@ -38,3 +38,41 @@ The following main.go file contains the setup needed to create and populate a lo
 ### Database Schema
 The following schema was used for database design
 ![database schema](docs/schema.jpg)
+
+Once the database has been generated, there is a function called *queryTest()* that queries the generated database with the following code:
+
+```SQL
+WITH RankedMovies AS (
+        SELECT
+            m.name,
+            m.rank,
+            mg.genre,
+            m.year,
+            ROW_NUMBER() OVER (
+                PARTITION BY mg.genre 
+                ORDER BY m.rank DESC
+            ) as rank_position
+        FROM movies m
+        INNER JOIN movies_genres mg ON m.id = mg.movie_id
+        WHERE m.rank IS NOT NULL
+    )
+    SELECT
+        genre,
+        name,
+        year,
+        rank
+    FROM RankedMovies
+    WHERE rank_position <= 3
+    ORDER BY genre, rank DESC;
+```
+
+Results of the query are writen/ exported to a file named [query_results.csv](query_results.csv) and is intened to help answer the question "What types of movies (by genre) receive the highest ratings/ranks?"
+
+### Personalization of the database
+
+In future iterations of this program/database, individual user interaction could be implemented which would allow for people to create collections and lists of movies that they like/ want to watch. This could be achieved by implementing 3 tables, *users*, *user_lists*, *lists*.
+The *users* table would contain information regarding users, *user_lists* would contain the id's of all lists created by users, and *lists* would contain the contents of each user movie playlist including personalized comment such as personal movie rating and comments.
+
+Taking the idea of interaction a step further, there could be the implementation of social interaction so that users could interact with each other such as liking others' ratings, planning movie events, join challenges, discussing on forums. While IMDb has a large focus of movie informaiton and critique reviews, there is a far lesser emphasis on the social connection of watching movies; which is what would distinguish this application from others. The focus on creating a forum for users to disucss their thoughts/opinions on new releases or their favorite cult-classics would be the main objective and provide an environment where users with all types of movie tastes could find like-minded individuals.
+
+Implementation with a user's watch history (via Netflix, hulu, Max, etc.) could help generate movie reccomendations of similar watchers.
